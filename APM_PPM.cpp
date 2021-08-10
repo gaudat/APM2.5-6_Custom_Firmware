@@ -14,11 +14,6 @@ APM_PPM::APM_PPM(){
 
 void APM_PPM::initialize(){
 
-  for(int j = 0; j<servo_count; j++){
-    pinMode(servoPin[j], OUTPUT);
-  }
-
-  pinMode(debugOut, OUTPUT);
   pinMode(ppmIn, INPUT);
 
   /*
@@ -147,13 +142,6 @@ ISR(TIMER5_CAPT_vect){
     count = 0;
     digitalWrite(26, !digitalRead(26));
   }
-
-  //Update servo outputs
-  if( (_ppmPass_ & ((uint8_t)1 << count)) == (1 << count)  ){
-    digitalWrite(servoPin[count],HIGH);
-  }
-  digitalWrite(servoPin[lastCount],LOW);
-
 
   //Reset the clock count
   TCNT5H = 0x00;

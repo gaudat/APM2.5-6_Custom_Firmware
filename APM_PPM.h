@@ -17,12 +17,7 @@ https://stackoverflow.com/questions/31852914/read-rc-pwm-signal-using-atmega2560
 #include "Arduino.h"
 
 const int ppmIn = 48; //PL_1
-const int debugOut = 5;
 const int numChannel = 8;
-
-//I don't know what space to put this in
-const int servo_count = 8;
-const int servoPin[8] = {12,11,8,7,6,3,2,5};
 
 extern volatile uint16_t _ppmIn_[numChannel];
 extern volatile uint8_t _ppmFlag_;
