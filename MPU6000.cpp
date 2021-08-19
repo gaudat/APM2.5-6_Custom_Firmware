@@ -30,46 +30,6 @@ void MPU6000::initialize(){
   writeReg(0x6B, 0x01);
   writeReg(0x19, 0x04);
   writeReg(0x1A, 0x03);
-  DEBUG_PRINTLN("DMP WRITE START");
-  digitalWrite(imuSelect, HIGH);
-  for (uint16_t offset = 0; offset < MPU6050_DMP_CODE_SIZE; offset++) {
-    if ((offset & 0x00ff) == 0) {
-      digitalWrite(imuSelect, HIGH);
-      // Change banks
-      digitalWrite(25, !digitalRead(25));
-      delay(100);
-      writeReg(0x6D, offset >> 8);
-      writeReg(0x6E, 0x00);
-      digitalWrite(imuSelect, LOW);
-      SPI.transfer(0x6F);
-    }
-    SPI.transfer(dmpMemory[offset]);
-  }
-  digitalWrite(imuSelect, HIGH);
-  for (uint16_t offset = 0; offset < MPU6050_DMP_CODE_SIZE; offset++) {
-    if ((offset & 0x00ff) == 0) {
-      digitalWrite(imuSelect, HIGH);
-      // Change banks
-      digitalWrite(25, !digitalRead(25));
-      delay(100);
-      writeReg(0x6D, offset >> 8);
-      writeReg(0x6E, 0x00);
-      digitalWrite(imuSelect, LOW);
-      SPI.transfer(0x6F | 0x80);
-    }
-    uint8_t res = SPI.transfer(0x00);
-    
-    if (res != dmpMemory[offset]) {
-      DEBUG_PRINT("READBACK ");
-      DEBUG_PRINT(offset);
-      DEBUG_PRINT(" ");
-      DEBUG_PRINT(res);
-      DEBUG_PRINT(" ");
-      DEBUG_PRINT(dmpMemory[offset]);
-      DEBUG_PRINTLN(" X");
-    }
-  }
-  DEBUG_PRINTLN("DMP WRITE DONE");
   writeWord(0x70, 0x03, 0x00);
   writeReg(0x1B, 0x18);
   writeReg(0x6A, 0xC0);

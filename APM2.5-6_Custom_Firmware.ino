@@ -227,10 +227,35 @@ void servos_mirror() {
   output.write(0, outputs, 8);
 }
 
+class Rate {
+  public:
+  Rate(uint32_t target_us);
+  void tick();
+  private:
+  uint32_t target_us;
+  uint32_t last_us;
+};
+
+Rate::Rate(uint32_t target_us) : target_us(target_us), last_us(0) {}
+
+void Rate::tick() {
+  //Serial.println("");
+  //Serial.println(last_us);
+  while ((micros() - last_us) < target_us) {
+    delay(0);
+  }
+  //Serial.println(micros() - last_us);
+  last_us = micros();
+}
+
+Rate loop_rate(10000);
+
 void loop() {
+  
   digitalWrite(ledRed, !digitalRead(ledRed));
   //motor_loop();
   loop_spi_print();
+  loop_rate.tick();
 }
 
 void loop_ppm_pass() {
