@@ -123,7 +123,6 @@ ISR(TIMER5_CAPT_vect){
 
   //If it has been more than 10000 ticks than the signal is valid PPM input
   if( ticks < 10000){
-    digitalWrite(25, !digitalRead(25));
     //Don't write to memory outside of the array
     if(count < numChannel){
      //Update pulsewidth values
@@ -140,7 +139,6 @@ ISR(TIMER5_CAPT_vect){
   //then reset the count
   else{
     count = 0;
-    digitalWrite(26, !digitalRead(26));
   }
 
   //Reset the clock count
