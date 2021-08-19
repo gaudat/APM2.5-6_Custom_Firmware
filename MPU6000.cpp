@@ -15,7 +15,7 @@ void MPU6000::initialize(){
   //Initialize SPI Bus
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
-  SPI.setClockDivider(SPI_CLOCK_DIV16); //Set to 1 Mhz
+  SPI.setClockDivider(SPI_CLOCK_DIV4); //Set to 1 Mhz
   SPI.setDataMode(SPI_MODE3);
 
   writeReg(0x6B, 0x80);
