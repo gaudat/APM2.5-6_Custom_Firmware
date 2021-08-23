@@ -5,6 +5,8 @@
 #include "APM_PPM.h"
 #include "APM2RCOutput.h"
 
+#include "COBS.h"
+
 //LED output pins
 const int ledBlue = 25;
 const int ledYellow = 26;
@@ -209,8 +211,6 @@ void setup () {
   digitalWrite(pressureSelect, HIGH);
 
   imu.initialize();
-  imu.CalibrateGyro(6);
-  imu.CalibrateAccel(6);
   
   output.init();
   for (int i = 0; i < 8; i++) {
@@ -241,21 +241,117 @@ Rate::Rate(uint32_t target_us) : target_us(target_us), last_us(0) {}
 void Rate::tick() {
   //Serial.println("");
   //Serial.println(last_us);
+  digitalWrite(ledBlue, 1);
   while ((micros() - last_us) < target_us) {
     delay(0);
   }
   //Serial.println(micros() - last_us);
   last_us = micros();
+  digitalWrite(ledBlue, 0);
 }
 
 Rate loop_rate(10000);
 
-void loop() {
+class SerialServo {
+  public:
+  SerialServo();
+  void update_from_serial();
+  void update_output();
+  private:
+  uint32_t last_update;
+  bool enabled;
+};
+
+SerialServo::SerialServo() : last_update(0), enabled(false) {}
+
+void SerialServo::update_from_serial() {
+  int ch = Serial.read();
+  if (ch == -1) {
+    return;
+  }
+  uint8_t buf[32];
+  size_t buflen = 0;
+  size_t max_skip = 20;
+  bool has_packet = false;
+  uint8_t buf_head[4];
+  bool first_loop = true;
+  while(max_skip > 0) {
+    if (! first_loop) {
+      // Prevent the first byte read above from overwritten
+    ch = Serial.read();
+    }
+    first_loop = false;
+    if (ch == -1) {
+      max_skip -= 1;
+      continue;
+    }
+    if (buflen < 4) {
+      buf_head[0] = buf_head[1];
+      buf_head[1] = buf_head[2];
+      buf_head[2] = buf_head[3];
+      buf_head[3] = ch;
+      if (buf_head[1] == 'O' && buf_head[2] == 'U' && buf_head[3] == 'T') {
+        memcpy(buf, buf_head, 4);
+        buflen = 4;
+      }
+      continue;
+    }
+    buf[buflen] = ch;
+    buflen ++;
+    if (ch == 0) {
+      has_packet = true;
+      break;
+    }
+    if (buflen >= 32) {
+      return;
+    }
+  }
+  if (! has_packet) {
+    return;
+  }
+  digitalWrite(ledYellow, !digitalRead(ledYellow));
+  uint8_t buf2[32];
   
+ 
+  size_t len2 = COBSDecode(buf, buflen, buf2, 32);
+  if (len2 <= 0) {
+    // Bad parse
+    return;
+  }
+  
+  uint16_t * outputs = (uint16_t *)(buf2 + 3);
+
+  output.write(0, outputs, 8);
+  for (int i = 0; i < 8; i++) {
+  output.enable_ch(i);
+  }
+  enabled = true;
+  last_update = millis();
+}
+
+void SerialServo::update_output() {
+  // Disable if timeout
+  if (millis() - last_update > 20) {
+    for (int i = 0; i < 8; i++) {
+    output.disable_ch(i);
+    }
+    enabled = false;
+  }
+}
+
+SerialServo ss;
+
+void loop() {
   digitalWrite(ledRed, !digitalRead(ledRed));
   //motor_loop();
-  loop_spi_print();
+  //loop_spi_print();
+  //loop_ppm_print();
+  ss.update_from_serial();
   loop_rate.tick();
+}
+
+void loop_out_read() {
+  
 }
 
 void loop_ppm_pass() {
@@ -263,15 +359,14 @@ void loop_ppm_pass() {
 }
 
 void loop_ppm_print () {
-  Serial.println(rxin.newData());
-  uint16_t val[numChannel];
-  rxin.read(val);
-  for (int ch = 0; ch < numChannel; ch++) {
-    Serial.print(val[ch]);
-    Serial.print(" ");
-  }
-  Serial.println();
-  delay(1000);
+  uint8_t buf[32], buf2[32];
+  buf[0] = 'P';
+  buf[1] = 'P';
+  buf[2] = 'M';
+  buf[3] = rxin.newData();
+  rxin.read((uint16_t *)buf+4);
+  size_t buflen = COBSEncode((uint8_t *) buf, 4 + (numChannel * 2), buf2, 32);
+  Serial.write(buf2, buflen);
 }
 
 void loop_spi_print () {
@@ -282,7 +377,13 @@ void loop_spi_print () {
   dofs[3] = imu.readWord(0x43);
   dofs[4] = imu.readWord(0x45);
   dofs[5] = imu.readWord(0x47);
-  Serial.write((uint8_t *)dofs, 12);
+  uint8_t buf[32], buf2[32];
+  buf[0] = 'I';
+  buf[1] = 'M';
+  buf[2] = 'U';
+  memcpy(buf+3, dofs, 12);
+  size_t buflen = COBSEncode((uint8_t *) buf, 15, buf2, 32);
+  Serial.write(buf2, buflen);
 }
 
 byte spi_read(byte read_command) {

@@ -18,23 +18,18 @@ void MPU6000::initialize(){
   SPI.setClockDivider(SPI_CLOCK_DIV4); //Set to 1 Mhz
   SPI.setDataMode(SPI_MODE3);
 
-  writeReg(0x6B, 0x80);
+  writeReg(0x6B, 0x80); // DEVICE_RESET
   delay(100);
-  writeReg(0x6A, 0x07);
+  writeReg(0x6A, 0x07); // FIFO_RESET | I2C_MST_RESET | SIG_COND_RESET
   delay(100);
-  writeReg(0x6B, 0x01);
-  writeReg(0x38, 0x00);
-  writeReg(0x23, 0x00);
-  writeReg(0x1C, 0x00);
-  writeReg(0x37, 0x80);
-  writeReg(0x6B, 0x01);
-  writeReg(0x19, 0x04);
-  writeReg(0x1A, 0x03);
-  writeWord(0x70, 0x03, 0x00);
-  writeReg(0x1B, 0x18);
-  writeReg(0x6A, 0xC0);
-  writeReg(0x38, 0x02);
-  writeReg(0x6A, 0x04);
+  writeReg(0x6B, 0x01); // CLKSEL = X axis gyroscope reference
+  writeReg(0x38, 0x00); // Disable interrupt output
+  writeReg(0x23, 0x00); // Disable FIFO
+  writeReg(0x1C, 0x00); // Accel full scale = +/- 2g
+  writeReg(0x37, 0x80); // INT level active low
+  writeReg(0x19, 0x00); // Sample rate divider = 1
+  writeReg(0x1A, 0x03); // DLPF: Accel 44 Hz, Gyro 42 Hz
+  writeReg(0x1B, 0x18); // Gyro full scale = +/- 2000 deg/s
    gyroScale = getGyroScale();
    accelScale = getAccelScale();
 }
@@ -205,7 +200,7 @@ void MPU6000::CalibrateGyro(uint8_t Loops ) {
   kP *= x;
   kI *= x;
   
-  PID( 0x43,  kP, kI,  Loops);
+  PID( 0x43,  kP, kI, Loops);
 }
 
 void MPU6000::CalibrateAccel(uint8_t Loops ) {
@@ -216,7 +211,7 @@ void MPU6000::CalibrateAccel(uint8_t Loops ) {
 	x = (100 - map(Loops, 1, 5, 20, 0)) * .01;
 	kP *= x;
 	kI *= x;
-	PID( 0x3B, kP, kI,  Loops);
+	PID( 0x3B, kP, kI, Loops);
 }
 
 void MPU6000::PID(uint8_t ReadAddress, float kP,float kI, uint8_t Loops){
