@@ -241,13 +241,13 @@ Rate::Rate(uint32_t target_us) : target_us(target_us), last_us(0) {}
 void Rate::tick() {
   //Serial.println("");
   //Serial.println(last_us);
-  digitalWrite(ledBlue, 1);
+  digitalWrite(ledBlue, 1); // Turn off blue when sleeping
   while ((micros() - last_us) < target_us) {
     delay(0);
   }
   //Serial.println(micros() - last_us);
   last_us = micros();
-  digitalWrite(ledBlue, 0);
+  digitalWrite(ledBlue, 0); // Turn on blue when in action
 }
 
 Rate loop_rate(10000);
@@ -257,12 +257,17 @@ class SerialServo {
   SerialServo();
   void update_from_serial();
   void update_output();
+  bool is_enabled();
   private:
   uint32_t last_update;
   bool enabled;
 };
 
 SerialServo::SerialServo() : last_update(0), enabled(false) {}
+
+bool SerialServo::is_enabled() {
+  return enabled;
+}
 
 void SerialServo::update_from_serial() {
   int ch = Serial.read();
@@ -309,7 +314,6 @@ void SerialServo::update_from_serial() {
   if (! has_packet) {
     return;
   }
-  digitalWrite(ledYellow, !digitalRead(ledYellow));
   uint8_t buf2[32];
   
  
@@ -331,7 +335,7 @@ void SerialServo::update_from_serial() {
 
 void SerialServo::update_output() {
   // Disable if timeout
-  if (millis() - last_update > 20) {
+  if (millis() - last_update > 100) {
     for (int i = 0; i < 8; i++) {
     output.disable_ch(i);
     }
@@ -342,11 +346,13 @@ void SerialServo::update_output() {
 SerialServo ss;
 
 void loop() {
-  digitalWrite(ledRed, !digitalRead(ledRed));
+  //digitalWrite(ledRed, !digitalRead(ledRed));
   //motor_loop();
-  //loop_spi_print();
-  //loop_ppm_print();
+  loop_spi_print();
+  loop_ppm_print();
   ss.update_from_serial();
+  ss.update_output();
+  digitalWrite(ledYellow, !ss.is_enabled());
   loop_rate.tick();
 }
 
