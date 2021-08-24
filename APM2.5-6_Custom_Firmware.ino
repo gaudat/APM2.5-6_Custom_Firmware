@@ -377,7 +377,7 @@ void loop_ppm_print () {
   buf[1] = 'P';
   buf[2] = 'M';
   buf[3] = rxin.newData();
-  rxin.read((uint16_t *)buf+4);
+  rxin.read((uint16_t *)(buf+4));
   size_t buflen = COBSEncode((uint8_t *) buf, 4 + (numChannel * 2), buf2, 32);
   Serial.write(buf2, buflen);
 }
