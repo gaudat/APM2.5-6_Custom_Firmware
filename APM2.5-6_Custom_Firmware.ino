@@ -325,10 +325,17 @@ void SerialServo::update_from_serial() {
   
   uint16_t * outputs = (uint16_t *)(buf2 + 3);
 
-  output.write(0, outputs, 8);
   for (int i = 0; i < 8; i++) {
-  output.enable_ch(i);
+    if (outputs[i] > 3000) {
+      // Shortcut to disable servo
+      output.disable_ch(i);
+    } else {
+      
+      output.enable_ch(i);
+      output.write(i, outputs[i]);
+    }
   }
+  
   enabled = true;
   last_update = millis();
 }
