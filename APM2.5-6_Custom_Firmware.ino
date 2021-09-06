@@ -68,120 +68,7 @@ APM_PPM rxin;
 const int io_count = 9;
 const int io_pins[9] = {A0, A1, A2, A3, A4, A5, A6, A7, A8};
 
-class SlewRateLimiter {
-  public:
-    SlewRateLimiter(int limit_per_tick, bool limit_accel_only) :
-      neutral(0),
-      first_run(false),
-      limit_per_tick(limit_per_tick),
-      limit_accel_only(limit_accel_only)
-    {
-
-    }
-    int run(int input, long ticks) {
-      if (first_run) {
-        last_ticks = ticks;
-        last_output = input;
-        first_run = false;
-        return input;
-      }
-      long time_diff = ticks - last_ticks;
-      last_ticks = ticks;
-      // See if accel or decel
-      if (last_output >= neutral && input > last_output) {
-        // Forward Accel
-        int upper_limit = last_output + time_diff * limit_per_tick;
-        input = constrain(input, neutral, upper_limit);
-      }
-      else if (last_output >= neutral && input <= last_output) {
-        // Forward Decel
-        if (!limit_accel_only) {
-          int lower_limit = last_output - time_diff * limit_per_tick;
-          // Prevent output from going under neutral
-          if (lower_limit < neutral) {
-            lower_limit = neutral;
-          }
-          input = constrain(input, lower_limit, last_output);
-        }
-      }
-      else if (last_output < neutral && input < last_output) {
-        // Backward Accel
-        int lower_limit = last_output - time_diff * limit_per_tick;
-        input = constrain(input, lower_limit, neutral);
-      }
-      else if (last_output < neutral && input >= last_output) {
-        // Backward Decel
-        if (!limit_accel_only) {
-          int upper_limit = last_output + time_diff * limit_per_tick;
-          // Prevent output from going above neutral
-          if (upper_limit > neutral) {
-            upper_limit = neutral;
-          }
-          input = constrain(input, last_output, upper_limit);
-        }
-      }
-      last_output = input;
-      return last_output;
-    }
-  private:
-    int neutral;
-    long last_ticks;
-    int last_output;
-    bool first_run;
-    int limit_per_tick;
-    bool limit_accel_only;
-};
-
-SlewRateLimiter throttle_SLM(1, true);
 APM2RCOutput output;
-
-void motor_loop() {
-  // Front = +y (Ch 3), Right = +x (Ch 1)
-  const int front_ch = 2;
-  const int right_ch = 0;
-
-  const int neutral = 1500;
-  const int input_deadzone = 50;
-
-  uint16_t inputs[numChannel];
-  const long input_ts = millis();
-
-  rxin.read(inputs);
-
-  // Add input channel preproc here
-
-  int throttle = inputs[front_ch];
-  int steering = inputs[right_ch];
-
-  throttle -= neutral;
-  steering -= neutral;
-
-  // Add throttle steering proc here
-  throttle = throttle_SLM.run(throttle, input_ts);
-
-  // Throttle -> Motor left +1, Motor right -1
-  // Steering -> Motor left +1, Motor right +1
-  // Motor left = neutral + Throttle + Steering
-  // Motor right = neutral - Throttle + Steering
-  int motor_left = neutral - throttle + steering;
-  int motor_right = neutral + throttle + steering;
-
-  // Add motor output proc here
-  motor_left = constrain(motor_left, 1300, 1700);
-  motor_right = constrain(motor_right, 1300, 1700);
-
-  bool oe = inputs[5] > 1200;
-  // Write to ouput
-  if (oe) {
-
-    output.write(0, motor_left);
-    output.write(1, motor_right);
-  } else {
-
-    output.write(0, neutral);
-    output.write(1, neutral);
-  }
-}
 
 //SPI Bus SlaveSelect pins
 MPU6000 imu;
@@ -218,13 +105,6 @@ void setup () {
   }
 
   rxin.initialize();
-}
-
-void servos_mirror() {
-  uint16_t outputs[8];
-
-  rxin.read(outputs);
-  output.write(0, outputs, 8);
 }
 
 class Rate {
@@ -353,22 +233,12 @@ void SerialServo::update_output() {
 SerialServo ss;
 
 void loop() {
-  //digitalWrite(ledRed, !digitalRead(ledRed));
-  //motor_loop();
   loop_spi_print();
   loop_ppm_print();
   ss.update_from_serial();
   ss.update_output();
   digitalWrite(ledYellow, !ss.is_enabled());
   loop_rate.tick();
-}
-
-void loop_out_read() {
-  
-}
-
-void loop_ppm_pass() {
-  digitalWrite(ledBlue, digitalRead(ppmIn));
 }
 
 void loop_ppm_print () {
