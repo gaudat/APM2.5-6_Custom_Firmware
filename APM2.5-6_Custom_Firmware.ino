@@ -104,6 +104,10 @@ void setup () {
     output.enable_ch(i);
   }
 
+  for (int i = 0; i < 8; i++) {
+    pinMode(A0 + i, INPUT);
+  }
+
   rxin.initialize();
 }
 
@@ -111,6 +115,7 @@ class Rate {
   public:
   Rate(uint32_t target_us);
   void tick();
+  bool tick_async();
   private:
   uint32_t target_us;
   uint32_t last_us;
@@ -130,7 +135,17 @@ void Rate::tick() {
   digitalWrite(ledBlue, 0); // Turn on blue when in action
 }
 
+bool Rate::tick_async() {
+  // Return true if tick expired
+  if ((micros() - last_us) < target_us) {
+    return false;
+  }
+  last_us = micros();
+  return true;
+}
+
 Rate loop_rate(10000);
+Rate loop_1s(1000000);
 
 class SerialServo {
   public:
@@ -232,13 +247,86 @@ void SerialServo::update_output() {
 
 SerialServo ss;
 
+class PowerModule {
+public:
+PowerModule();
+void update();
+private:
+uint8_t osr;
+uint8_t loop_count;
+uint32_t volt_sum;
+uint32_t cur_sum;
+uint32_t pwr_sum;
+};
+
+PowerModule::PowerModule() : 
+osr(32), 
+loop_count(0), 
+volt_sum(0), 
+cur_sum(0),
+pwr_sum(0) {
+  pinMode(A12, INPUT);
+  pinMode(A13, INPUT);
+}
+
+void PowerModule::update() {
+  // Current: ADC12 INA169 R_L = 100K R_S = 5e-4
+  // Current 1A at batt = 0.05V at input = around 10 at input
+  // Voltage: ADC13 1V at batt = 0.1V at input = around 20 at input
+  uint16_t cur = analogRead(A12);
+  uint16_t volt = analogRead(A13);
+  if (cur > cur_sum) {
+    cur_sum = cur;
+  }
+  volt_sum += volt;
+  uint32_t energy = cur * volt;
+  pwr_sum += energy;
+  loop_count += 1;
+  if (loop_count >= osr) {
+    uint8_t buf[32], buf2[32];
+    buf[0] = 'P';
+    buf[1] = 'W';
+    buf[2] = 'R';
+    buf[3] = loop_count;
+    // Peak current in LSB
+    *(uint32_t*)(buf + 4) = cur_sum;
+    // Voltage in sum-LSB
+    // To be divided by osr in upper level
+    *(uint32_t*)(buf + 8) = volt_sum;
+    // Energy used in sum-LSB
+    *(uint32_t*)(buf + 12) = pwr_sum;
+    size_t buflen = COBSEncode(buf, 16, buf2, 32);
+    Serial.write(buf2, buflen);
+    loop_count = 0;
+    cur_sum = 0;
+    volt_sum = 0;
+    pwr_sum = 0;
+  }
+}
+
+PowerModule pm;
+
 void loop() {
   loop_spi_print();
   loop_ppm_print();
+  loop_adc_print();
+  pm.update();
   ss.update_from_serial();
   ss.update_output();
   digitalWrite(ledYellow, !ss.is_enabled());
   loop_rate.tick();
+}
+
+void loop_adc_print () {
+  uint8_t buf[32], buf2[32];
+  buf[0] = 'A';
+  buf[1] = 'D';
+  buf[2] = 'C';
+  for (int i = 0; i < 8; i++) {
+    *(uint16_t *)(buf + 3 + 2 * i) = analogRead(A0 + i);
+  }
+  size_t buflen = COBSEncode((uint8_t *)buf, 19, buf2, 32);
+  Serial.write(buf2, buflen);
 }
 
 void loop_ppm_print () {
