@@ -1,0 +1,142 @@
+// P5: Servo input
+// P2: IN2
+// P1: OC0B - PWM output, LED
+// P0: IN1
+
+#include <core_timers.h>
+
+// OCRA = 0xff -> 16500000 / 8 / 256 = 8056 Hz
+// 12 kHz = 172, 16 kHz = 129, 20 kHz = 103, 24 kHz = 86
+
+uint8_t pwm_max = 255;
+
+void pwm_setup() {
+  Timer0_SetToPowerup();
+  Timer0_SetWaveformGenerationMode(Timer0_Phase_Correct_PWM_OCR);
+  Timer0_SetOutputCompareMatchA(pwm_max);
+  pwm_write(0);
+  Timer0_SetCompareOutputModeB(Timer0_Clear);
+  Timer0_ClockSelect(Timer0_Prescale_Value_8);
+}
+
+void pwm_write(uint8_t pwm_val) {
+  if (pwm_val > pwm_max) {
+    return;
+  }
+  Timer0_SetOutputCompareMatchB(pwm_val);
+}
+
+// millis uses Timer1 so Timer0 can be freely used
+
+void setup() {
+  pinMode(5, INPUT);
+  digitalWrite(2, LOW);
+  pinMode(2, OUTPUT);
+  digitalWrite(1, LOW);
+  pinMode(1, OUTPUT);
+  digitalWrite(0, LOW);
+  pinMode(0, OUTPUT);
+  pwm_setup();
+}
+
+void brake() {
+  pwm_write(0);
+  digitalWrite(0, LOW);
+  digitalWrite(2, LOW);
+}
+
+void coast() {
+  pwm_write(0);
+  digitalWrite(0, HIGH);
+  digitalWrite(2, HIGH);
+}
+
+void forward() {
+  // Write high first to coast
+  digitalWrite(0, HIGH);
+  digitalWrite(2, LOW);
+}
+
+void backward() {
+  // Write high first to coast
+  digitalWrite(2, HIGH);
+  digitalWrite(0, LOW);
+}
+
+unsigned long reverse_expire = 0;
+bool last_direction = true;
+bool reverse_waiting = false;
+static const unsigned long reverse_timeout = 100;
+
+bool check_reverse(bool forward) {
+  if (reverse_waiting && (reverse_expire - millis() > reverse_timeout)) {
+    reverse_waiting = false;
+    last_direction = forward;
+    return false;
+  }
+  if (forward ^ last_direction) {
+    reverse_expire = reverse_timeout + millis();
+    reverse_waiting = true;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+unsigned long last_servo_input = 0;
+static const unsigned long servo_input_timeout = 100;
+
+unsigned long pw_center = 1500;
+unsigned long pw_max = 2000;
+unsigned long pw_min = 2000;
+unsigned long pw_deadzone = 10;
+
+void loop_pwm_test() {
+  for (uint8_t i = 0; i < pwm_max; i++) {
+    pwm_write(i);
+    delay(10);
+  }
+}
+
+void loop() {
+  unsigned long pw = pulseIn(5, HIGH, 3000);
+  if (pw > 0) {
+    last_servo_input = millis();
+    // Check if within deadzone
+    if (abs(pw - pw_center) < pw_deadzone) {
+      // Brake
+      pwm_write(0);
+      brake();
+    } else if (pw > pw_center) {
+      // Forward
+      if (check_reverse(true)) {
+        // Need to brake before switching direction
+        pwm_write(0);
+        brake();
+      } else {
+      unsigned long amplitude = (pw - pw_center - pw_deadzone) * pwm_max / (pw_max - pw_center - pw_deadzone);
+      forward();
+      pwm_write(amplitude);
+      }
+    } else if (pw < pw_center) {
+      // Backward
+      if (check_reverse(false)) {
+        // Need to brake before switching direction
+        pwm_write(0);
+        brake();
+      } else {
+      unsigned long amplitude = (pw_center - pw - pw_deadzone) * pwm_max / (pw_center - pw_min - pw_deadzone);
+      backward();
+      pwm_write(amplitude);
+      }
+    }
+  } else {
+    // Check servo timeout
+    if ((millis() - last_servo_input) > servo_input_timeout) {
+      pwm_write(0);
+      brake();
+    } else {
+    // Keep going
+    }
+  }
+}
