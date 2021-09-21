@@ -1,4 +1,6 @@
-// P5: Servo input
+// P5: Reset pin
+// P4: Servo input (disconnect when using USB)
+// P3: USB
 // P2: IN2
 // P1: OC0B - PWM output, LED
 // P0: IN1
@@ -16,7 +18,7 @@ void pwm_setup() {
   Timer0_SetOutputCompareMatchA(pwm_max);
   pwm_write(0);
   Timer0_SetCompareOutputModeB(Timer0_Clear);
-  Timer0_ClockSelect(Timer0_Prescale_Value_8);
+  Timer0_ClockSelect(Timer0_Prescale_Value_1);
 }
 
 void pwm_write(uint8_t pwm_val) {
@@ -29,7 +31,7 @@ void pwm_write(uint8_t pwm_val) {
 // millis uses Timer1 so Timer0 can be freely used
 
 void setup() {
-  pinMode(5, INPUT);
+  pinMode(4, INPUT);
   digitalWrite(2, LOW);
   pinMode(2, OUTPUT);
   digitalWrite(1, LOW);
@@ -37,6 +39,7 @@ void setup() {
   digitalWrite(0, LOW);
   pinMode(0, OUTPUT);
   pwm_setup();
+  center_setup();
 }
 
 void brake() {
@@ -63,10 +66,10 @@ void backward() {
   digitalWrite(0, LOW);
 }
 
-unsigned long reverse_expire = 0;
+uint32_t reverse_expire = 0;
 bool last_direction = true;
 bool reverse_waiting = false;
-static const unsigned long reverse_timeout = 100;
+static const uint16_t reverse_timeout = 100;
 
 bool check_reverse(bool forward) {
   if (reverse_waiting && (reverse_expire - millis() > reverse_timeout)) {
@@ -83,13 +86,28 @@ bool check_reverse(bool forward) {
   }
 }
 
-unsigned long last_servo_input = 0;
-static const unsigned long servo_input_timeout = 100;
+uint16_t last_servo_input = 0;
+static const uint16_t servo_input_timeout = 100;
 
-unsigned long pw_center = 1500;
-unsigned long pw_max = 2000;
-unsigned long pw_min = 2000;
-unsigned long pw_deadzone = 10;
+uint32_t pw_center = 0;
+uint16_t pw_max = 2300;
+uint16_t pw_min = 700;
+uint16_t pw_deadzone = 10;
+
+void center_setup() {
+  uint16_t loops = 128;
+  const uint8_t loops_right_shift = 7;
+  pw_center = 0;
+  while (loops > 0) {
+    uint32_t pw = pulseIn(4, HIGH, servo_input_timeout * 1000);
+    if (pw >= pw_min && pw <= pw_max) {
+      pw_center += pw;
+      loops --;
+    }
+  }
+  pw_center >>= loops_right_shift;
+  brake_print_pw(pw_center);
+}
 
 void loop_pwm_test() {
   for (uint8_t i = 0; i < pwm_max; i++) {
@@ -98,36 +116,76 @@ void loop_pwm_test() {
   }
 }
 
+void brake_print_pw(uint16_t pw) {
+  uint16_t digit_separate_delay = 500;
+  uint16_t digit_show_delay = 100;
+  uint8_t digits[5];
+  digits[0] = (pw / 10000) % 10;
+  digits[1] = (pw / 1000) % 10;
+  digits[2] = (pw / 100) % 10;
+  digits[3] = (pw / 10) % 10;
+  digits[4] = pw % 10;
+  for (uint8_t di = 0; di < 5; di++) {
+    if (digits[di] == 0) {
+      digitalWrite(1, HIGH);
+      delay(10);
+      digitalWrite(1, LOW);
+      delay(digit_separate_delay);
+      continue;
+    }
+    uint8_t si = digits[di];
+    while (si -- > 0) {
+      digitalWrite(1, HIGH);
+      delay(digit_show_delay);
+      digitalWrite(1, LOW);
+      delay(digit_show_delay);
+    }
+    delay(digit_separate_delay);
+  }
+  pwm_setup();
+}
+
+
 void loop() {
-  unsigned long pw = pulseIn(5, HIGH, 3000);
-  if (pw > 0) {
+  int32_t pw = pulseIn(4, HIGH, servo_input_timeout * 1000);
+  if (pw > pw_min && pw < pw_max) {
     last_servo_input = millis();
     // Check if within deadzone
-    if (abs(pw - pw_center) < pw_deadzone) {
-      // Brake
+    if ((pw > pw_center - pw_deadzone) && (pw < pw_center + pw_deadzone)) {
+      // Within deadzone, brake
       pwm_write(0);
-      brake();
-    } else if (pw > pw_center) {
+      coast();
+    } else if (pw > pw_center + pw_deadzone) {
       // Forward
+      // Check switch direction
       if (check_reverse(true)) {
-        // Need to brake before switching direction
+        // Wait in brake
         pwm_write(0);
         brake();
       } else {
-      unsigned long amplitude = (pw - pw_center - pw_deadzone) * pwm_max / (pw_max - pw_center - pw_deadzone);
-      forward();
-      pwm_write(amplitude);
+        // Calculate output pwm
+        int32_t out = (pw - (pw_center + pw_deadzone));
+        out *= pwm_max;
+        out /= (pw_max - (pw_center + pw_deadzone));
+        uint8_t pwm_out = out;
+        pwm_write(pwm_out);
+        forward();
       }
-    } else if (pw < pw_center) {
+    } else if (pw < pw_center - pw_deadzone) {
       // Backward
+      // Check switch direction
       if (check_reverse(false)) {
-        // Need to brake before switching direction
+        // Wait in brake
         pwm_write(0);
         brake();
       } else {
-      unsigned long amplitude = (pw_center - pw - pw_deadzone) * pwm_max / (pw_center - pw_min - pw_deadzone);
-      backward();
-      pwm_write(amplitude);
+        // Calculate output pwm
+        int32_t out = ((pw_center - pw_deadzone) - pw);
+        out *= pwm_max;
+        out /= ((pw_center - pw_deadzone) - pw_min);
+        uint8_t pwm_out = out;
+        pwm_write(pwm_out);
+        backward();
       }
     }
   } else {
