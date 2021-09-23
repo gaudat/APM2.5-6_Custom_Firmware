@@ -66,32 +66,39 @@ void backward() {
   digitalWrite(0, LOW);
 }
 
-uint32_t reverse_expire = 0;
+uint32_t reverse_start = 0;
 bool last_direction = true;
 bool reverse_waiting = false;
 static const uint16_t reverse_timeout = 100;
 
 bool check_reverse(bool forward) {
-  if (reverse_waiting && (reverse_expire - millis() > reverse_timeout)) {
-    reverse_waiting = false;
-    last_direction = forward;
-    return false;
-  }
-  if (forward ^ last_direction) {
-    reverse_expire = reverse_timeout + millis();
-    reverse_waiting = true;
-    return true;
-  } else {
-    return false;
-  }
+    if (!reverse_waiting && !(forward ^ last_direction)) {
+        // Stay false
+        return reverse_waiting;
+    }
+    else if (!reverse_waiting && (forward ^ last_direction)) {
+        // Set waiting = true, set reverse_start to time
+        reverse_waiting = true;
+        reverse_start = millis();
+        return reverse_waiting;
+    } else if (reverse_waiting && (millis() - reverse_start < reverse_timeout)) {
+        // Stay true
+        return reverse_waiting;
+    } else if (reverse_waiting && (millis() - reverse_start >= reverse_timeout)) {
+        // Set last_direction, clear reverse_start, reverse_waiting = false
+        reverse_waiting = false;
+        last_direction = forward;
+        reverse_start = 0;
+        return reverse_waiting;
+    }
 }
 
 uint16_t last_servo_input = 0;
 static const uint16_t servo_input_timeout = 100;
 
 uint32_t pw_center = 0;
-uint16_t pw_max = 2300;
-uint16_t pw_min = 700;
+uint16_t pw_max = 2000;
+uint16_t pw_min = 1000;
 uint16_t pw_deadzone = 10;
 
 void center_setup() {
@@ -107,6 +114,9 @@ void center_setup() {
   }
   pw_center >>= loops_right_shift;
   brake_print_pw(pw_center);
+  // Set pw_max and pw_min
+  pw_max = pw_center * 19 / 15;
+  pw_min = pw_center * 11 / 15;
 }
 
 void loop_pwm_test() {
@@ -148,13 +158,13 @@ void brake_print_pw(uint16_t pw) {
 
 void loop() {
   int32_t pw = pulseIn(4, HIGH, servo_input_timeout * 1000);
-  if (pw > pw_min && pw < pw_max) {
+  if (pw > 0) {
     last_servo_input = millis();
     // Check if within deadzone
     if ((pw > pw_center - pw_deadzone) && (pw < pw_center + pw_deadzone)) {
       // Within deadzone, brake
       pwm_write(0);
-      coast();
+      brake();
     } else if (pw > pw_center + pw_deadzone) {
       // Forward
       // Check switch direction
@@ -167,6 +177,12 @@ void loop() {
         int32_t out = (pw - (pw_center + pw_deadzone));
         out *= pwm_max;
         out /= (pw_max - (pw_center + pw_deadzone));
+        if (out >= 255) {
+            out = 255;
+        }
+        if (out <= 0) {
+          out = 0;
+        }
         uint8_t pwm_out = out;
         pwm_write(pwm_out);
         forward();
@@ -183,6 +199,12 @@ void loop() {
         int32_t out = ((pw_center - pw_deadzone) - pw);
         out *= pwm_max;
         out /= ((pw_center - pw_deadzone) - pw_min);
+        if (out >= 255) {
+            out = 255;
+        }
+        if (out <= 0) {
+          out = 0;
+        }
         uint8_t pwm_out = out;
         pwm_write(pwm_out);
         backward();
